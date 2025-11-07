@@ -13,7 +13,7 @@ interface TokenResponse {
 }
 
 // Constants
-const BASE_URL = 'https://demo.bondify.uz/api/v1/'
+const BASE_URL = 'https://muza.bondify.uz/api/v1/'
 const TOKEN_ENDPOINT = 'token/';
 const REFRESH_ENDPOINT = 'token/refresh/';
 const VERIFY_ENDPOINT = 'token/verify/';

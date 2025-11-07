@@ -14,7 +14,7 @@ interface ApiErrorResponse {
 }
 
 // Constants
-const BASE_URL = "https://demo.bondify.uz/api/v1/";
+const BASE_URL = "https://muza.bondify.uz/api/v1/";
 
 // Create API instance
 const api: AxiosInstance = axios.create({
