@@ -359,33 +359,38 @@ export default function ClientsPage() {
       header: "",
       id: "actions",
       accessorKey: "id",
-      cell: (row: Client) =>
-          row.type === "Юр.лицо" ? (
-              <div className="flex gap-2">
-                <Button
-                    variant="outline"
-                    onClick={() => navigate(`/clients/${row.id}/history`)}
-                >
-                  {t("common.history")}
-                </Button>
-                {currentUser?.is_superuser && (
-                    <>
-                      <Button
-                          variant="outline"
-                          onClick={() => row.id && setSelectedClientId(row.id)}
-                      >
-                        {t("common.increment_balance")}
-                      </Button>
-                      <Button
-                          variant="outline"
-                          onClick={() => row.id && setCashOutClientId(row.id)}
-                      >
-                        Обналичичка
-                      </Button>
-                    </>
-                )}
-              </div>
-          ) : null,
+      cell: (row: Client) => (
+          <div className="flex gap-2">
+            <Button
+                variant="outline"
+                onClick={() => navigate(`/clients/${row.id}/history`)}
+            >
+              {t("common.history")}
+            </Button>
+            <Button
+                variant="outline"
+                onClick={() => navigate(`/debts/${row.id}`)}
+            >
+              Долги
+            </Button>
+            {currentUser?.is_superuser && row.type === "Юр.лицо" && (
+                <>
+                  <Button
+                      variant="outline"
+                      onClick={() => row.id && setSelectedClientId(row.id)}
+                  >
+                    {t("common.increment_balance")}
+                  </Button>
+                  <Button
+                      variant="outline"
+                      onClick={() => row.id && setCashOutClientId(row.id)}
+                  >
+                    Обналичичка
+                  </Button>
+                </>
+            )}
+          </div>
+      ),
     },
   ];
 

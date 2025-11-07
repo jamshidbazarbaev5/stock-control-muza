@@ -65,7 +65,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { useGetStores } from "../api/store";
 import { useGetClients, useCreateClient } from "../api/client";
-import { useGetUsers } from "../api/user";
+
+import { useQuery } from "@tanstack/react-query";
+import api from "../api/api";
 import { useCreateSale } from "@/core/api/sale";
 import { useCurrentUser } from "../hooks/useCurrentUser";
 import { addDays } from "date-fns";
@@ -82,6 +84,19 @@ interface FormSaleItem {
 interface FormSalePayment {
   payment_method: string;
   amount: number;
+  exchange_rate?: number;
+  change_amount?: number;
+}
+
+interface CurrencyRate {
+  created_at: string;
+  rate: string;
+  currency_detail: {
+    id: number;
+    name: string;
+    short_name: string;
+    is_base: boolean;
+  };
 }
 
 interface SaleFormData {
@@ -122,17 +137,29 @@ function CreateSale() {
   const location = useLocation();
   const { t } = useTranslation();
   const { data: currentUser } = useCurrentUser();
-  const { data: usersData } = useGetUsers({});
 
   // Get URL parameters
   const searchParams = new URLSearchParams(location.search);
   const productId = searchParams.get("productId");
 
-  const users = Array.isArray(usersData) ? usersData : usersData?.results || [];
-
   // Initialize selectedStore and check user roles
   const isAdmin = currentUser?.role === "Администратор";
   const isSuperUser = currentUser?.is_superuser === true;
+
+  // Only fetch users if admin/superuser (sellers should not fetch)
+  const usersQuery = useQuery({
+    queryKey: ['users', {}],
+    queryFn: async () => {
+      const response = await api.get('users/');
+      return response.data;
+    },
+    enabled: (isAdmin || isSuperUser) && currentUser?.role !== 'Продавец',
+    retry: false,
+  });
+
+  const users = (isAdmin || isSuperUser) && currentUser?.role !== 'Продавец' && !usersQuery.isError
+    ? (Array.isArray(usersQuery.data) ? usersQuery.data : usersQuery.data?.results || [])
+    : [];
   const [selectedStore, setSelectedStore] = useState<string | null>(
     currentUser?.store_read?.id?.toString() || null,
   );
@@ -642,6 +669,34 @@ const handleQuantityChange = (
     updateTotalAmount();
   };
 
+  const [usdInputValues, setUsdInputValues] = useState<{[key: number]: string}>({});
+
+  const handleUsdChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    index: number,
+  ) => {
+    const inputValue = e.target.value;
+    const normalizedValue = inputValue.replace(',', '.');
+    const sanitizedValue = normalizedValue.replace(/[^\d.]/g, '');
+    const decimalCount = (sanitizedValue.match(/\./g) || []).length;
+    if (decimalCount > 1) return;
+    
+    setUsdInputValues(prev => ({ ...prev, [index]: sanitizedValue }));
+    
+    const exchangeRate = form.watch(`sale_payments.${index}.exchange_rate`) || 1;
+    const usdAmount = parseFloat(sanitizedValue) || 0;
+    const uzsAmount = parseFloat((usdAmount * exchangeRate).toFixed(2));
+    form.setValue(`sale_payments.${index}.amount`, uzsAmount);
+    
+    const totalAmount = parseFloat(form.getValues("total_amount") || "0");
+    const discountAmount = parseFloat(form.getValues("discount_amount") || "0");
+    const finalTotal = totalAmount - discountAmount;
+    const changeAmount = Math.max(0, uzsAmount - finalTotal);
+    form.setValue(`sale_payments.${index}.change_amount`, changeAmount);
+  };
+
+
+
   const handlePriceChange = (
     e: React.ChangeEvent<HTMLInputElement>,
     index: number,
@@ -679,13 +734,15 @@ const handleQuantityChange = (
       const discountAmount = parseFloat(data.discount_amount || "0");
       const expectedPaymentTotal = totalFromItems - discountAmount;
       
-      // Validate payment amounts sum
+      // Validate payment amounts sum (subtract change amount)
       const actualPaymentTotal = data.sale_payments.reduce((sum, payment) => {
-        return sum + (parseFloat(String(payment.amount)) || 0);
+        const paymentAmount = parseFloat(String(payment.amount)) || 0;
+        const changeAmount = parseFloat(String(payment.change_amount)) || 0;
+        return sum + (paymentAmount - changeAmount);
       }, 0);
       
       if (Math.abs(actualPaymentTotal - expectedPaymentTotal) > 0.01) {
-        toast.error(`Payment total (${actualPaymentTotal.toFixed(2)}) must equal total amount minus discount (${expectedPaymentTotal.toFixed(2)})`);
+        toast.error(`Сумма платежей (${actualPaymentTotal.toFixed(2)}) должна равняться общей сумме минус скидка (${expectedPaymentTotal.toFixed(2)})`);
         return;
       }
       
@@ -757,10 +814,26 @@ const handleQuantityChange = (
           price_per_unit: item.price_per_unit,
           ...(item.stock ? { stock: item.stock } : {}),
         })),
-        sale_payments: data.sale_payments.map((payment) => ({
-          payment_method: payment.payment_method,
-          amount: Number(String(payment.amount).replace(/,/g, "")).toFixed(2),
-        })),
+        sale_payments: data.sale_payments.map((payment, index) => {
+          const usdAmount = payment.payment_method === "Валюта" && usdInputValues[index]
+            ? parseFloat(usdInputValues[index])
+            : payment.payment_method === "Валюта" && payment.exchange_rate
+            ? payment.amount / payment.exchange_rate
+            : payment.amount;
+          
+          return {
+            payment_method: payment.payment_method,
+            amount: payment.payment_method === "Валюта" 
+              ? Number(usdAmount).toFixed(2)
+              : Number(String(payment.amount).replace(/,/g, "")).toFixed(2),
+            ...(payment.payment_method === "Валюта" && payment.exchange_rate && {
+              exchange_rate: payment.exchange_rate,
+            }),
+            ...(payment.payment_method === "Валюта" && payment.change_amount && {
+              change_amount: Number(String(payment.change_amount).replace(/,/g, "")).toFixed(2),
+            }),
+          };
+        }),
         ...(data.sale_debt?.client && !data.on_credit
           ? { client: data.sale_debt.client }
           : {}),
@@ -791,6 +864,10 @@ const handleQuantityChange = (
       toast.error(t("messages.error_creating"));
     }
   };
+
+
+
+
 
   const addSaleItem = () => {
     const currentItems = form.getValues("sale_items") || [];
@@ -844,6 +921,9 @@ const handleQuantityChange = (
 
   // Add isMobile state and handleMobileSearch
   const [isMobile, setIsMobile] = useState(false);
+  const [currencyRates, setCurrencyRates] = useState<CurrencyRate[]>([]);
+  const [_loadingRates, setLoadingRates] = useState(false);
+
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(
@@ -855,6 +935,26 @@ const handleQuantityChange = (
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // Fetch currency rates
+  const fetchCurrencyRates = async () => {
+    try {
+      setLoadingRates(true);
+      const response = await fetch('https://test.bondify.uz/api/v1/currency/rates/');
+      const data = await response.json();
+      setCurrencyRates(data);
+    } catch (error) {
+      console.error('Error fetching currency rates:', error);
+      toast.error('Ошибка загрузки курсов валют');
+    } finally {
+      setLoadingRates(false);
+    }
+  };
+
+  // Fetch rates on component mount
+  useEffect(() => {
+    fetchCurrencyRates();
   }, []);
   const handleMobileSearch = (
     value: string,
@@ -1001,7 +1101,7 @@ const handleQuantityChange = (
                       </SelectTrigger>
                       <SelectContent>
                         {users
-                          .filter((user) => {
+                          .filter((user:any) => {
                             const selectedStore = form.watch("store");
                             // Cast user to ExtendedUser to access store_read
                             const extendedUser = user as ExtendedUser;
@@ -1014,7 +1114,7 @@ const handleQuantityChange = (
                                   selectedStore)
                             );
                           })
-                          .map((user) => (
+                          .map((user:any) => (
                             <SelectItem
                               key={user.id}
                               value={user.id?.toString() || ""}
@@ -1299,7 +1399,7 @@ const handleQuantityChange = (
             <h3 className="text-base sm:text-lg font-semibold">
               {t("table.payment_methods")}
             </h3>
-            {form.watch("sale_payments").map((_, index) => (
+            {form.watch("sale_payments").map((payment, index) => (
               <div
                 key={index}
                 className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:items-end"
@@ -1314,7 +1414,14 @@ const handleQuantityChange = (
                         value={
                           typeof field.value === "string" ? field.value : ""
                         }
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          if (value === "Валюта") {
+                            const defaultRate = currencyRates[0] ? parseFloat(currencyRates[0].rate) : 12500;
+                            form.setValue(`sale_payments.${index}.exchange_rate`, defaultRate);
+                            form.setValue(`sale_payments.${index}.change_amount`, 0);
+                          }
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue />
@@ -1332,51 +1439,116 @@ const handleQuantityChange = (
                           <SelectItem value="Перечисление">
                             {t("payment.per")}
                           </SelectItem>
+                          <SelectItem value="Валюта">
+                            Валюта (USD)
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name={`sale_payments.${index}.amount`}
-                  render={({ field: { onChange, value } }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>{t("table.amount")}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="text"
-                          value={
-                            value !== undefined && value !== null
-                              ? Number(value).toLocaleString()
-                              : ""
-                          }
-                          onChange={(e) => {
-                            // Remove all non-digit and non-decimal characters for parsing
-                            const rawValue = e.target.value
-                              .replace(/[^\d.,]/g, "")
-                              .replace(/,/g, "");
-                            const newAmount = parseFloat(rawValue) || 0;
-                            const totalAmount = parseFloat(
-                              form.watch("total_amount"),
-                            );
-                            const otherPaymentsTotal = form
-                              .watch("sale_payments")
-                              .filter((_, i) => i !== index)
-                              .reduce((sum, p) => sum + (p.amount || 0), 0);
-
-                            // Update payment amount
-                            if (newAmount + otherPaymentsTotal > totalAmount) {
-                              onChange(totalAmount - otherPaymentsTotal);
-                            } else {
-                              onChange(newAmount);
+                {payment.payment_method === "Валюта" ? (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name={`sale_payments.${index}.amount`}
+                      render={({ }) => {
+                        return (
+                          <FormItem className="flex-1">
+                            <FormLabel>Сумма ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="text"
+                                inputMode="decimal"
+                                className="text-right"
+                                value={usdInputValues[index] || ''}
+                                onChange={(e) => handleUsdChange(e, index)}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        );
+                      }}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`sale_payments.${index}.exchange_rate`}
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormLabel>Курс (UZS)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              onChange={(e) => {
+                                const newRate = Number(e.target.value);
+                                field.onChange(newRate);
+                                const currentAmount = form.watch(`sale_payments.${index}.amount`) || 0;
+                                const oldRate = form.watch(`sale_payments.${index}.exchange_rate`) || 1;
+                                const usdAmount = currentAmount / oldRate;
+                                const uzsAmount = usdAmount * newRate;
+                                const totalAmount = parseFloat(form.getValues("total_amount") || "0");
+                                const discountAmount = parseFloat(form.getValues("discount_amount") || "0");
+                                const finalTotal = totalAmount - discountAmount;
+                                const changeAmount = Math.max(0, uzsAmount - finalTotal);
+                                form.setValue(`sale_payments.${index}.amount`, uzsAmount);
+                                form.setValue(`sale_payments.${index}.change_amount`, changeAmount);
+                              }}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    {(form.watch(`sale_payments.${index}.change_amount`) || 0) > 0 && (
+                      <FormItem className="flex-1">
+                        <FormLabel className="text-blue-600">Сдача</FormLabel>
+                        <div className="text-lg font-bold text-blue-600 mt-2">
+                          {(form.watch(`sale_payments.${index}.change_amount`) || 0).toLocaleString()} UZS
+                        </div>
+                      </FormItem>
+                    )}
+                  </>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name={`sale_payments.${index}.amount`}
+                    render={({ field: { onChange, value } }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>{t("table.amount")}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="text"
+                            value={
+                              value !== undefined && value !== null
+                                ? Number(value).toLocaleString()
+                                : ""
                             }
-                          }}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                            onChange={(e) => {
+                              // Remove all non-digit and non-decimal characters for parsing
+                              const rawValue = e.target.value
+                                .replace(/[^\d.,]/g, "")
+                                .replace(/,/g, "");
+                              const newAmount = parseFloat(rawValue) || 0;
+                              const totalAmount = parseFloat(
+                                form.watch("total_amount"),
+                              );
+                              const otherPaymentsTotal = form
+                                .watch("sale_payments")
+                                .filter((_, i) => i !== index)
+                                .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+                              // Update payment amount
+                              if (newAmount + otherPaymentsTotal > totalAmount) {
+                                onChange(totalAmount - otherPaymentsTotal);
+                              } else {
+                                onChange(newAmount);
+                              }
+                            }}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                )}
                 {index > 0 && (
                   <Button
                     type="button"

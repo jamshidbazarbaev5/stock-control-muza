@@ -175,6 +175,7 @@
     }
   },
   "common": {
+    "exchange_rate":"Курс обмена",
     "paid3":"Не в долг",
       "mass_payment":"Оплатить долг",
     "available_budget": "Бюджет",
@@ -527,6 +528,7 @@
   "forms": {
     "can_view_quantity": "Может просматривать количество",
     "budget_type": "Тип оплаты",
+    "rate":"Валюта",
     "transfer": "Перечисление",
     "lender_name": "Имя",
     "loan_details": "Детали займа",

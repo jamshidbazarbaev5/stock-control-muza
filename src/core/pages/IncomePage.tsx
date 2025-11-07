@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useGetIncomes } from "../api/income";
 import { useGetUsers } from "../api/user";
 import { ResourceTable } from "../helpers/ResourseTable";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -13,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { useGetStores } from "../api/store";
 import type { Store } from "../api/store";
+import { useGetClients } from "../api/client";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format } from "date-fns";
@@ -29,6 +32,7 @@ import { useCurrentUser } from "../hooks/useCurrentUser";
 
 export default function IncomePage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [selectedStore, setSelectedStore] = useState("all");
   const [selectedSource, setSelectedSource] = useState("all");
@@ -43,11 +47,19 @@ export default function IncomePage() {
 
   const { data: storesData } = useGetStores();
   const { data: usersData } = useGetUsers();
+  const { data: clientsData } = useGetClients({});
   const stores = Array.isArray(storesData)
     ? storesData
     : storesData?.results || [];
   const users = Array.isArray(usersData) ? usersData : usersData?.results || [];
+  const clients = Array.isArray(clientsData) ? clientsData : clientsData?.results || [];
   const { data: currentUser } = useCurrentUser();
+
+  // Helper function to find client ID by name
+  const findClientIdByName = (clientName: string) => {
+    const client = clients.find(c => c.name === clientName);
+    return client?.id;
+  };
   const { data: incomesData, isLoading } = useGetIncomes({
     params: {
       ...(selectedStore !== "all" && { store: selectedStore }),
@@ -121,7 +133,25 @@ export default function IncomePage() {
     {
       header: t("forms.client"),
       accessorKey: "description.Client",
-      cell: (row: any) => row.description.Client,
+      cell: (row: any) => {
+        const clientName = row.description.Client;
+        if (clientName && row.source === "Погашение долга") {
+          return (
+            <span 
+              className="hover:underline cursor-pointer text-blue-600"
+              onClick={() => {
+                const clientId = findClientIdByName(clientName);
+                if (clientId) {
+                  navigate(`/debts/${clientId}`);
+                }
+              }}
+            >
+              {clientName}
+            </span>
+          );
+        }
+        return clientName || "-";
+      },
     },
 
     {
@@ -139,6 +169,29 @@ export default function IncomePage() {
             row.description["Timestamp"] ||
             row.timestamp,
         ),
+    },
+    {
+      header: "Действия",
+      accessorKey: "actions",
+      cell: (row: any) => {
+        if (row.source === "Погашение долга" && row.description.Client) {
+          return (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const clientId = findClientIdByName(row.description.Client);
+                if (clientId) {
+                  navigate(`/debts/${clientId}`);
+                }
+              }}
+            >
+              Долги
+            </Button>
+          );
+        }
+        return null;
+      },
     },
   ];
 

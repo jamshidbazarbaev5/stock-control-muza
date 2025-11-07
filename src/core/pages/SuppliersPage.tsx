@@ -12,8 +12,19 @@ import {
   useAddSupplierBalance,
   type AddSupplierBalanceRequest,
 } from "../api/supplier";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+
+interface CurrencyRate {
+  created_at: string;
+  rate: string;
+  currency_detail: {
+    id: number;
+    name: string;
+    short_name: string;
+    is_base: boolean;
+  };
+}
 import { useGetStores, type Store } from "../api/store";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -98,6 +109,7 @@ export default function SuppliersPage() {
     store: "",
     amount: "",
     payment_method: "Наличные",
+    exchange_rate: "",
   });
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [showScrollButtons, setShowScrollButtons] = useState(false);
@@ -106,8 +118,9 @@ export default function SuppliersPage() {
     supplier: "",
     store: "",
     amount: "",
-    payment_type: "Наличные" as "Наличные" | "Карта" | "Click" | "Перечисление",
+    payment_type: "Наличные" as "Наличные" | "Карта" | "Click" | "Перечисление" | "Валюта",
     comment: "",
+    exchange_rate: "",
   });
   const [selectedMassPaymentStore, setSelectedMassPaymentStore] = useState<Store | null>(null);
 
@@ -125,12 +138,22 @@ export default function SuppliersPage() {
       supplier: number;
       store: number;
       amount: number;
-      payment_type: "Наличные" | "Карта" | "Click" | "Перечисление";
+      payment_type: "Наличные" | "Карта" | "Click" | "Перечисление" | "Валюта";
       comment: string;
+      exchange_rate?: number;
     }) => {
       const response = await api.post('/stock_debt_payment/mass-pay/', data);
       return response.data;
     },
+  });
+
+  const { data: currencyRates } = useQuery<CurrencyRate[]>({
+    queryKey: ['currency-rates'],
+    queryFn: async () => {
+      const response = await api.get('/currency/rates/');
+      return response.data;
+    },
+    enabled: balanceForm.payment_method === "Валюта" || massPaymentForm.payment_type === "Валюта",
   });
 
   // Get stores array
@@ -196,10 +219,23 @@ export default function SuppliersPage() {
       store: "",
       amount: "",
       payment_method: "Наличные",
+      exchange_rate: "",
     });
     setSelectedStore(null);
     setIsBalanceDialogOpen(true);
   };
+
+  useEffect(() => {
+    if (currencyRates && currencyRates.length > 0 && balanceForm.payment_method === "Валюта" && !balanceForm.exchange_rate) {
+      setBalanceForm(prev => ({ ...prev, exchange_rate: currencyRates[0].rate }));
+    }
+  }, [currencyRates, balanceForm.payment_method]);
+
+  useEffect(() => {
+    if (currencyRates && currencyRates.length > 0 && massPaymentForm.payment_type === "Валюта" && !massPaymentForm.exchange_rate) {
+      setMassPaymentForm(prev => ({ ...prev, exchange_rate: currencyRates[0].rate }));
+    }
+  }, [currencyRates, massPaymentForm.payment_type]);
 
   const handleBalanceSubmit = async () => {
     if (
@@ -219,6 +255,9 @@ export default function SuppliersPage() {
       store: Number(balanceForm.store),
       amount: Number(balanceForm.amount),
       payment_method: balanceForm.payment_method,
+      ...(balanceForm.payment_method === "Валюта" && balanceForm.exchange_rate && {
+        exchange_rate: Number(balanceForm.exchange_rate),
+      }),
     };
 
     addSupplierBalance.mutate(data, {
@@ -229,11 +268,7 @@ export default function SuppliersPage() {
         setIsBalanceDialogOpen(false);
         setSelectedSupplierForBalance(null);
       },
-      onError: () => {
-        toast.error(
-            t("messages.error.balance_add_failed") || "Failed to add balance",
-        );
-      },
+    
     });
   };
 
@@ -244,6 +279,7 @@ export default function SuppliersPage() {
       amount: "",
       payment_type: "Наличные",
       comment: "",
+      exchange_rate: "",
     });
     setIsMassPaymentDialogOpen(true);
   };
@@ -283,6 +319,9 @@ export default function SuppliersPage() {
       amount: Number(massPaymentForm.amount),
       payment_type: massPaymentForm.payment_type,
       comment: massPaymentForm.comment,
+      ...(massPaymentForm.payment_type === "Валюта" && massPaymentForm.exchange_rate && {
+        exchange_rate: Number(massPaymentForm.exchange_rate),
+      }),
     };
 
     massPayment.mutate(data, {
@@ -292,11 +331,7 @@ export default function SuppliersPage() {
         );
         setIsMassPaymentDialogOpen(false);
       },
-      onError: () => {
-        toast.error(
-            t("messages.error.mass_payment_failed") || "Failed to process mass payment",
-        );
-      },
+    
     });
   };
 
@@ -413,9 +448,29 @@ export default function SuppliersPage() {
                     <SelectItem value="Карта">Карта</SelectItem>
                     <SelectItem value="Click">Click</SelectItem>
                     <SelectItem value="Перечисление">Перечисление</SelectItem>
+                    <SelectItem value="Валюта">Валюта</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {balanceForm.payment_method === "Валюта" && (
+                <div className="space-y-2">
+                  <Label htmlFor="exchange_rate">
+                    {t("common.exchange_rate") || "Exchange Rate"} *
+                  </Label>
+                  <Input
+                    id="exchange_rate"
+                    type="number"
+                    step="0.01"
+                    value={balanceForm.exchange_rate}
+                    onChange={(e) =>
+                      setBalanceForm({ ...balanceForm, exchange_rate: e.target.value })
+                    }
+                    placeholder={t("placeholders.enter_exchange_rate") || "Enter exchange rate"}
+                  />
+                
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="store">{t("forms.store")} *</Label>
@@ -616,7 +671,7 @@ export default function SuppliersPage() {
                 </Label>
                 <Select
                     value={massPaymentForm.payment_type}
-                    onValueChange={(value: "Наличные" | "Карта" | "Click" | "Перечисление") =>
+                    onValueChange={(value: "Наличные" | "Карта" | "Click" | "Перечисление" | "Валюта") =>
                         setMassPaymentForm({ ...massPaymentForm, payment_type: value })
                     }
                 >
@@ -628,9 +683,29 @@ export default function SuppliersPage() {
                     <SelectItem value="Карта">Карта</SelectItem>
                     <SelectItem value="Click">Click</SelectItem>
                     <SelectItem value="Перечисление">Перечисление</SelectItem>
+                    <SelectItem value="Валюта">Валюта</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {massPaymentForm.payment_type === "Валюта" && (
+                <div className="space-y-2">
+                  <Label htmlFor="mass_exchange_rate">
+                    {t("common.exchange_rate") || "Exchange Rate"} *
+                  </Label>
+                  <Input
+                    id="mass_exchange_rate"
+                    type="number"
+                    step="0.01"
+                    value={massPaymentForm.exchange_rate}
+                    onChange={(e) =>
+                      setMassPaymentForm({ ...massPaymentForm, exchange_rate: e.target.value })
+                    }
+                    placeholder={t("placeholders.enter_exchange_rate") || "Enter exchange rate"}
+                  />
+                
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="mass_comment">{t("common.comment")}</Label>

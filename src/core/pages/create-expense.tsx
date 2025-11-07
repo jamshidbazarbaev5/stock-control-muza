@@ -58,6 +58,7 @@ const expenseFields = (t: (key: string) => string, storeBudget: number, onStoreC
         { value: 'Карта', label: t('forms.card') },
         { value: 'Click', label: t('forms.click') },
         { value: 'Перечисление', label: t('forms.transfer') },
+         { value: 'Валюта', label: t('forms.rate') },
       ],
       onChange: (value: string) => onPaymentTypeChange(value)
     },

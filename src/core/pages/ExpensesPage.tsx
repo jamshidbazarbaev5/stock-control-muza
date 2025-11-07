@@ -191,6 +191,7 @@ export default function ExpensesPage() {
             <SelectItem value="all">{t("common.all_payment_types")}</SelectItem>
             <SelectItem value="Наличные">{t("payment_types.cash")}</SelectItem>
             <SelectItem value="Карта">{t("payment_types.card")}</SelectItem>
+            <SelectItem value="Валюта">{t("forms.rate")}</SelectItem>
             <SelectItem value="Click">{t("payment_types.click")}</SelectItem>
           </SelectContent>
         </Select>

@@ -59,6 +59,7 @@ export default function AddMoney() {
         { value: "Наличные", label: t("forms.cash") },
         { value: "Карта", label: t("forms.card") },
         { value: "Click", label: t("forms.click") },
+          { value: 'Валюта', label: t('forms.rate') },
         { value: "Перечисление", label: t("forms.transfer") },
       ],
     },
