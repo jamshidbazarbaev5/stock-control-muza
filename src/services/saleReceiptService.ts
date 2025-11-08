@@ -5,6 +5,8 @@
  * Fetches receipt template from API and renders according to template settings
  */
 
+import api from "@/core/api/api";
+
 export interface SaleData {
   id: number;
   sale_id?: string;
@@ -114,8 +116,6 @@ export interface PrintServiceHealthCheck {
 class SaleReceiptService {
   private readonly PRINT_SERVICE_URL = "http://localhost:3001";
   private readonly PRINT_TIMEOUT = 10000; // 10 seconds timeout
-  private readonly TEMPLATE_API_URL =
-    "https://demo.bondify.uz/api/v1/receipt/template/";
   private cachedTemplate: ReceiptTemplate | null = null;
 
   /**
@@ -128,20 +128,9 @@ class SaleReceiptService {
         return this.cachedTemplate;
       }
 
-      const response = await fetch(this.TEMPLATE_API_URL, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await api.get<ReceiptTemplate[]>("receipt/template/");
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch template: ${response.status} ${response.statusText}`,
-        );
-      }
-
-      const templates: ReceiptTemplate[] = await response.json();
+      const templates = response.data;
 
       console.log(`📦 Fetched ${templates.length} templates from API:`);
       templates.forEach((t) => {
@@ -164,8 +153,7 @@ class SaleReceiptService {
         console.log(
           `   Enabled components: ${activeTemplate.style.components.filter((c) => c.enabled).length}`,
         );
-
-        // Log each component
+                // Log each component
         activeTemplate.style.components
           .filter((c) => c.enabled)
           .sort((a, b) => a.order - b.order)
@@ -229,7 +217,7 @@ class SaleReceiptService {
   async printSaleReceipt(saleData: SaleData): Promise<PrintServiceResponse> {
     try {
       console.log(
-        "🖨️ Starting automatic sale receipt printing via Node.js service...",
+        "🖨 Starting automatic sale receipt printing via Node.js service...",
       );
 
       // Fetch the active template from API
@@ -276,8 +264,7 @@ class SaleReceiptService {
       throw error;
     }
   }
-
-  /**
+    /**
    * Print with automatic handling (no browser fallback - thermal printer only)
    */
   async printWithFallback(saleData: SaleData): Promise<{
@@ -288,7 +275,7 @@ class SaleReceiptService {
   }> {
     try {
       // Use thermal printer service directly (like shift closure)
-      console.log("🖨️ Printing sale receipt via Node.js thermal service...");
+      console.log("🖨 Printing sale receipt via Node.js thermal service...");
       await this.printSaleReceipt(saleData);
       return {
         success: true,
