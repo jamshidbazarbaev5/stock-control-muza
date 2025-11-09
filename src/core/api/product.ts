@@ -26,7 +26,7 @@ export interface AttributeValueResponse {
 
 export interface Product {
   id?: number;
-  is_imported:boolean;
+  is_imported?:boolean;
   has_barcode?: boolean;
   barcode?: string;
   product_name: string;
