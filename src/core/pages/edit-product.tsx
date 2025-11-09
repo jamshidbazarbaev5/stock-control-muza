@@ -52,6 +52,7 @@ export default function EditProduct() {
     { from_unit: 0, to_unit: 0, number: "" },
   ]);
   const [baseUnit, setBaseUnit] = useState("");
+  const [isImported, setIsImported] = useState(false);
 
   // Fetch categories and measurements for the select dropdowns
   const { data: categoriesData } = useGetCategories({});
@@ -115,6 +116,7 @@ export default function EditProduct() {
       setMinPrice(parseNumericValue(product.min_price));
       setSellingPrice(parseNumericValue(product.selling_price));
       setBaseUnit(product.base_unit?.toString() || "");
+      setIsImported(product.is_imported || false);
 
       // Set measurements
       if (product.measurement) {
@@ -193,6 +195,7 @@ export default function EditProduct() {
               ? Number(av.value)
               : av.value,
         })),
+        is_imported: isImported,
       };
 
       console.log("Formatted data:", formattedData);
@@ -273,6 +276,13 @@ export default function EditProduct() {
             value: sellingPrice,
             onChange: (value: string) => setSellingPrice(value),
           },
+          {
+            name: "is_imported",
+            label: "Импортный товар",
+            type: "checkbox",
+            value: isImported,
+            onChange: (value: boolean) => setIsImported(value),
+          },
         ]}
         onSubmit={handleSubmit}
         isSubmitting={updateProduct.isPending}
@@ -285,6 +295,7 @@ export default function EditProduct() {
             barcode: product.barcode || "",
             min_price: parseNumericValue(product.min_price),
             selling_price: parseNumericValue(product.selling_price),
+            is_imported: product.is_imported || false,
           } as any
         }
       >

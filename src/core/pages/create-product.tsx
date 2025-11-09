@@ -42,6 +42,7 @@ export default function CreateProduct() {
     { from_unit: 0, to_unit: 0, number: "" },
   ]);
   const [baseUnit, setBaseUnit] = useState("");
+  const [isImported, setIsImported] = useState(false);
 
   // Barcode scanner state
   const [scanBuffer, setScanBuffer] = useState("");
@@ -117,6 +118,10 @@ export default function CreateProduct() {
 
     if (product.selling_price) {
       setSellingPrice(product.selling_price.toString());
+    }
+
+    if (product.is_imported !== undefined) {
+      setIsImported(product.is_imported);
     }
 
     // Set measurements if available
@@ -264,6 +269,7 @@ export default function CreateProduct() {
               ? Number(av.value)
               : av.value,
         })),
+        is_imported: isImported,
       };
 
       console.log("Formatted data:", formattedData);
@@ -339,6 +345,13 @@ export default function CreateProduct() {
             required: true,
             value: sellingPrice,
             onChange: (value: string) => setSellingPrice(value),
+          },
+          {
+            name: "is_imported",
+            label: "Импортный товар",
+            type: "checkbox",
+            value: isImported,
+            onChange: (value: boolean) => setIsImported(value),
           },
         ]}
         onSubmit={handleSubmit}
