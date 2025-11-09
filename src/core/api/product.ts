@@ -17,7 +17,7 @@ export interface ProductMeasurement {
   for_sale: boolean;
 }
 
-// Attribute value interface for API responses
+// Attribute value interface for API responsesaa
 export interface AttributeValueResponse {
   id: number;
   attribute: Attribute;
